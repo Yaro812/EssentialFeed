@@ -18,9 +18,11 @@ class URLSessionHTTPClient {
     struct UnexpectedValuesRepresentation: Error {}
     
     func get(from url: URL, completion: @escaping (HTTPClientResult) -> Void) {
-        session.dataTask(with: url) { _, _, error in
+        session.dataTask(with: url) { data, response, error in
             if let error = error {
                 completion(.failure(error))
+            } else if let data = data, data.count > 0, let response = response as? HTTPURLResponse {
+                completion(.success((data, response)))
             } else {
                 completion(.failure(UnexpectedValuesRepresentation()))
             }
@@ -43,7 +45,7 @@ class URLSessionHPPTClientTests: XCTestCase {
         let url = anyURL()
         
         let exp = expectation(description: "Wait for completion")
-        URLProtocolStub.ovserveRequests { request in
+        URLProtocolStub.observeRequests { request in
             XCTAssertEqual(request.url, url)
             XCTAssertEqual(request.httpMethod, "GET")
             exp.fulfill()
@@ -62,7 +64,7 @@ class URLSessionHPPTClientTests: XCTestCase {
     }
     
     func test_getFromURL_failsOnAllInvalidRepresentationCases() {
-        let anyData = Data("any data".utf8)
+        let anyData = anyData()
         let anyError = NSError(domain: "any error", code: 0)
         let nonHTTPURLResponse = URLResponse(url: anyURL(), mimeType: nil, expectedContentLength: 0, textEncodingName: nil)
         let anyHTTPURLResponse = HTTPURLResponse(url: anyURL(), statusCode: 200, httpVersion: nil, headerFields: nil)
@@ -78,7 +80,26 @@ class URLSessionHPPTClientTests: XCTestCase {
         XCTAssertNotNil(resultErrorFor(data: anyData, response: nonHTTPURLResponse, error: nil))
     }
 
-
+//    func test_getFromURL_succeedsOnHTTPRequestWithData() {
+//        let data = anyData()
+//        let response = anyHTTPURLResponse()
+//        URLProtocolStub.stub(data: data, response: response, error: nil)
+//
+//        let exp = expectation(description: "Wait for completion")
+//        makeSUT().get(from: anyURL()) { result in
+//            switch result {
+//            case let .success((receivedData, receivedResponse)):
+//                XCTAssertEqual(receivedData, data)
+//                XCTAssertEqual(receivedResponse.url, response.url)
+//                XCTAssertEqual(receivedResponse.statusCode, response.statusCode)
+//            case .failure:
+//                XCTFail("Expected success, got \(result) instead")
+//            }
+//            exp.fulfill()
+//        }
+//        wait(for: [exp], timeout: 1.0)
+//    }
+     
     // MARK: helpers
     
     private func makeSUT(file: StaticString = #file, line: UInt = #line) -> URLSessionHTTPClient {
@@ -111,6 +132,14 @@ class URLSessionHPPTClientTests: XCTestCase {
         return URL(string: "http://any-url.com")!
     }
     
+    private func anyData() -> Data {
+        return Data("any data".utf8)
+    }
+    
+    private func anyHTTPURLResponse() -> HTTPURLResponse {
+       return HTTPURLResponse(url: anyURL(), statusCode: 200, httpVersion: nil, headerFields: nil)!
+    }
+    
     private class URLProtocolStub: URLProtocol {
         private static var stub: Stub?
         private static var requestObserver: ((URLRequest) -> Void)?
@@ -125,7 +154,7 @@ class URLSessionHPPTClientTests: XCTestCase {
             stub = Stub(data: data, response: response, error: error)
         }
         
-        static func ovserveRequests(observer: @escaping (URLRequest) -> Void) {
+        static func observeRequests(observer: @escaping (URLRequest) -> Void) {
             requestObserver = observer
         }
         
